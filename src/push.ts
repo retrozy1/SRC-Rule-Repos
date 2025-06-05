@@ -79,7 +79,7 @@ const updatedVariablePaths = changedFiles.filter(file => file.endsWith('.txt') |
 const updatedValuePaths = updatedVariablePaths.filter(dir => dir.endsWith('.md'));
 
 for (const rulePath of updatedValuePaths) {
-    const valueName = rulePath.split('/')[rulePath.split('/').length - 1].split('.')[0];
+    const valueName = rulePath.split('/')[rulePath.split('/').length - 1].slice(0, -3);
     const value = values.find(val => sanitize(val.name) === valueName);
     
     if (!updatedVars.has(value.variableId)) {
