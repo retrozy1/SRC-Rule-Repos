@@ -4,9 +4,12 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
+const PHPSESSID = process.env.PHPSESSID;
+const gameId = process.env.GAME_ID;
+
 const client = new Client({
     userAgent: 'gameRulesRepo',
-    PHPSESSID: process.env.PHPSESSID
+    PHPSESSID
 });
 
 async function writeMarkdownFile(filePath: string, content: string) {
@@ -19,7 +22,7 @@ function sanitize(name: string) {
 }
 
 const session = await client.GetSession({}).then(ses => ses.session);
-const gameModeration = session.gameModeratorList.find(gm => gm.gameId === process.env.GAME_ID);
+const gameModeration = session.gameModeratorList.find(gm => gm.gameId === gameId);
 if (gameModeration) {
     if (gameModeration.level === -1) {
         throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.')
@@ -29,12 +32,7 @@ if (gameModeration) {
 }
 
 const smod = gameModeration.level === 1;
-let init: boolean;
-
-const stats = await fs.stat('../Rules')
-    .catch(() => init = true)
-    .then(() => init = false);
-
+let init: boolean = fs.existsSync('../Rules') && fs.statSync('../Rules').isDirectory();
 
 const makeVariables = async (dir: string, arr: any[]) => {
     for (const v of arr) {
@@ -59,7 +57,7 @@ const makeValues = async (dir: string, v: Variable) => {
 }
 
 let { game, categories, levels, variables, values } = await Client.GetGameData({
-    gameId: process.env.GAME_ID
+    gameId
 });
 
 //Remove archives
@@ -83,20 +81,28 @@ for (const val of values) {
 
 // Categories
 for (const cat of categories) {
-    const catDir = path.join('Rules', 'Categories', sanitize(cat.name));
-    await writeMarkdownFile(path.join(catDir, `${sanitize(cat.name)}.md`), cat.rules);
+    let catName = sanitize(cat.name);
+    if (categories.filter(c => sanitize(c.name) === catName).length > 1) {
+        catName += `-${cat.id}`;
+    }
+    const catDir = path.join('Rules', 'Categories', catName);
+    await writeMarkdownFile(path.join(catDir, `${catName}.md`), cat.rules);
 
     await makeVariables(
-        path.join('Rules', 'Categories', sanitize(cat.name), 'Variables'),
+        path.join(catDir, 'Variables'),
         variables.filter(v => v.categoryId === cat.id && !v.levelId)
     );
 }
 
 // Levels
 for (const lvl of levels) {
-    const lvlDir = path.join('Rules', 'Levels', sanitize(lvl.name));
+    let lvlName = sanitize(lvl.name);
+    if (levels.filter(l => sanitize(l.name) === lvlName).length > 1) {
+        lvlName += `-${lvl.id}`;
+    }
+    const lvlDir = path.join('Rules', 'Levels', lvlName);
     await writeMarkdownFile(
-        path.join(lvlDir, `${sanitize(lvl.name)}.md`),
+        path.join(lvlDir, `${lvlName}.md`),
         lvl.rules ?? ''
     );
 
@@ -118,18 +124,32 @@ for (const v of mappedVars) {
     const cat = categories.find(c => c.id === v.categoryId);
     const lvl = levels.find(l => l.id === v.levelId);
 
-    const vals = valMap.get(v.id) ?? [];
+    let catName = sanitize(cat.name);
+    if (categories.filter(c => sanitize(c.name) === catName).length > 1) {
+        catName += `-${cat.id}`;
+    }
+
+    let lvlName = sanitize(lvl.name);
+    if (levels.filter(c => sanitize(c.name) === lvlName).length > 1) {
+        lvlName += `-${lvl.id}`;
+    }
+
+    let vName = sanitize(v.name);
+    if (variables.filter(v => sanitize(v.name) === vName).length > 1) {
+        vName += `-${v.id}`;
+    }
 
     const mappingDir = path.join(
         'Rules',
         'MappedVariables',
-        sanitize(lvl.name),
-        sanitize(cat.name),
-        sanitize(v.name)
+        lvlName,
+        catName,
+        vName
     );
     await makeValues(mappingDir, v);
 }
 
+//Commit
 try {
     execSync('git diff --quiet');
     console.log('No changes found');
@@ -146,7 +166,7 @@ try {
         message = 'Rules updated from speedrun.com';
         if (smod) {
             const auditLog = await client.GetAuditLogList({
-                gameId: process.env.GAME_ID,
+                gameId,
                 page: 1
             });
 

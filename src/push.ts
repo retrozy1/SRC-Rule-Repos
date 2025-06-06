@@ -4,6 +4,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
+const gameId = process.env.GAME_ID;
+
 const sanitize = (name: string) => {
     return name.replace(/[\/\\?%*:|"<>]/g, '-');
 }
@@ -21,9 +23,11 @@ const client = new Client({
     PHPSESSID: process.env.PHPSESSID
 });
 
-const { categories, levels, variables, values } = await Client.GetGameData({
-    gameId: process.env.GAME_ID
+let { categories, levels, variables, values } = await Client.GetGameData({
+    gameId
 });
+
+values = values.filter(v => !v.archived);
 
 //Gets an array of strings of modified file dirs from last commit
 const changedFiles = execSync('git diff --name-status HEAD~1 HEAD', { encoding: 'utf-8' })
@@ -35,13 +39,13 @@ const changedFiles = execSync('git diff --name-status HEAD~1 HEAD', { encoding: 
 //Game rules
 if (changedFiles.includes('Rules/GameRules.md')) {
     const gameSettings = await client.GetGameSettings({
-        gameId: process.env.GAME_ID
+        gameId
     });
 
     gameSettings.settings.rules = await readMarkdown(path.join('Rules', 'GameRules.md'));
 
     await client.PutGameSettings({
-        gameId: process.env.GAME_ID,
+        gameId,
         settings: gameSettings.settings
     });
 }
@@ -53,7 +57,7 @@ for (const rulePath of filterByPath('Categories')) {
     category.rules = await readMarkdown(rulePath);
 
     await client.PutCategoryUpdate({
-        gameId: process.env.GAME_ID,
+        gameId,
         categoryId: category.id,
         category
     });
@@ -66,7 +70,7 @@ for (const rulePath of filterByPath('Levels')) {
     level.rules = await readMarkdown(rulePath);
 
     await client.PutLevelUpdate({
-        gameId: process.env.GAME_ID,
+        gameId,
         levelId: level.id,
         level
     });
@@ -80,10 +84,11 @@ const updatedValuePaths = updatedVariablePaths.filter(dir => dir.endsWith('.md')
 
 for (const rulePath of updatedValuePaths) {
     const valueName = rulePath.split('/')[rulePath.split('/').length - 1].slice(0, -3);
+    const categoryId = categories.find(c => sanitize(c.name) === rulePath.split('/')[2]).id;
     const value = values.find(val => sanitize(val.name) === valueName);
     
     if (!updatedVars.has(value.variableId)) {
-        updatedVars.set(value.variableId, {});
+        updatedVars.set(value.variableId, { newValues: [] });
     }
     const varElement = updatedVars.get(value.variableId)
     varElement.newValues.push({ valueId: value.id, newRules: await readMarkdown(rulePath) });
@@ -98,17 +103,17 @@ updatedVars.forEach(async (value, key) => {
     const variable = variables.find(v => v.id === key);
     if (value.newDescription) variable.description = value.newDescription;
 
-    let values: Value[];
+    const variableValues: Value[] = [];
     for (const val of value.newValues) {
-        const v = values.find(v => v.id === v.id)
+        const v = values.find(v => v.id === val.valueId);
         v.rules = val.newRules;
-        values.push(v);
+        variableValues.push(v);
     }
 
-    await client.PutVariableUpdate({
-        gameId: process.env.GAME_ID,
+    client.PutVariableUpdate({
+        gameId,
         variableId: key,
         variable,
-        values
+        values: variableValues
     });
-})
+});
