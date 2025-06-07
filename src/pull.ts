@@ -12,42 +12,62 @@ const client = new Client({
     PHPSESSID
 });
 
-async function writeMarkdownFile(filePath: string, content: string) {
+const writeMarkdownFile = async (filePath: string, content: string) => {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content);
 }
 
-function sanitize(name: string) {
+const directoryExists = async (path: string) => {
+    try {
+        const stat = await fs.stat(path);
+        return stat.isDirectory();
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            return false;
+        }
+        throw err;
+    }
+}
+
+const sanitize = (name: string) => {
     return name.replace(/[\/\\?%*:|"<>]/g, '-');
+}
+
+const makeIdExtensions = <T extends { name: string, id: string }>(items: T[], item: T): string => {
+    let itemName = sanitize(item.name);
+    if (items.filter(i => sanitize(i.name) === itemName).length > 1) {
+        itemName += `-${item.id}`;
+    }
+    return itemName;
 }
 
 const session = await client.GetSession({}).then(ses => ses.session);
 const gameModeration = session.gameModeratorList.find(gm => gm.gameId === gameId);
 if (gameModeration) {
     if (gameModeration.level === -1) {
-        throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.')
+        throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.');
     }
 } else {
-    throw new Error('This account does not moderate this game.')
+    throw new Error('This account does not moderate this game.');
 }
 
 const smod = gameModeration.level === 1;
-let init: boolean = fs.existsSync('../Rules') && fs.statSync('../Rules').isDirectory();
+let init = await directoryExists('../Rules');
 
 const makeVariables = async (dir: string, arr: any[]) => {
     for (const v of arr) {
         await makeValues(
             path.join(dir, sanitize(v.name)),
             v
-        )
+        );
     }
 }
 
-const makeValues = async (dir: string, v: Variable) => {
+const makeValues = async (dir: string, variable: Variable) => {
     await fs.mkdir(dir, { recursive: true });
-    await writeMarkdownFile(path.join(dir, 'Description.txt'), v.description ?? '');
+    await writeMarkdownFile(path.join(dir, 'Description.txt'), variable.description ?? '');
 
-    const vals = valMap.get(v.id) ?? [];
+    const vals = valMap.get(variable.id) ?? [];
     for (const val of vals) {
         await writeMarkdownFile(
             path.join(dir, 'Values', `${sanitize(val.name)}.md`),
@@ -120,33 +140,22 @@ await makeVariables(
 
 // Mapped Variables
 const mappedVars = variables.filter(v => v.categoryId && v.levelId);
-for (const v of mappedVars) {
-    const cat = categories.find(c => c.id === v.categoryId);
-    const lvl = levels.find(l => l.id === v.levelId);
+for (const variable of mappedVars) {
+    const category = categories.find(c => c.id === variable.categoryId);
+    const level = levels.find(l => l.id === variable.levelId);
 
-    let catName = sanitize(cat.name);
-    if (categories.filter(c => sanitize(c.name) === catName).length > 1) {
-        catName += `-${cat.id}`;
-    }
-
-    let lvlName = sanitize(lvl.name);
-    if (levels.filter(c => sanitize(c.name) === lvlName).length > 1) {
-        lvlName += `-${lvl.id}`;
-    }
-
-    let vName = sanitize(v.name);
-    if (variables.filter(v => sanitize(v.name) === vName).length > 1) {
-        vName += `-${v.id}`;
-    }
+    const levelName = makeIdExtensions(levels, level);
+    const categoryName = makeIdExtensions(categories, category);
+    const variableName = makeIdExtensions(mappedVars, variable);
 
     const mappingDir = path.join(
         'Rules',
         'MappedVariables',
-        lvlName,
-        catName,
-        vName
+        levelName,
+        categoryName,
+        variableName
     );
-    await makeValues(mappingDir, v);
+    await makeValues(mappingDir, variable);
 }
 
 //Commit

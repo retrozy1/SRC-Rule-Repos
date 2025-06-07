@@ -1,4 +1,4 @@
-import Client, { Value } from 'speedruncom.js';
+import Client, { Value, Variable, Category } from 'speedruncom.js';
 import 'dotenv/config';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -18,6 +18,14 @@ const readMarkdown = async (dir: string) => {
     return await fs.readFile(dir, 'utf-8');
 }
 
+const findItemByName = <T extends { name: string }>(items: T[], name: string): T | undefined => {
+    return items.find(item => sanitize(item.name) === name);
+}
+
+const findItemById = <T extends { id: string }>(items: T[], id: string): T | undefined => {
+    return items.find(item => sanitize(item.id) === id);
+}
+
 const client = new Client({
     userAgent: 'gameRulesRepo',
     PHPSESSID: process.env.PHPSESSID
@@ -27,7 +35,11 @@ let { categories, levels, variables, values } = await Client.GetGameData({
     gameId
 });
 
-values = values.filter(v => !v.archived);
+//Remove archives
+categories = categories.filter(cat => !cat.archived);
+levels = levels.filter(lvl => !lvl.archived);
+variables = variables.filter(v => !v.archived);
+values = values.filter(val => !val.archived);
 
 //Gets an array of strings of modified file dirs from last commit
 const changedFiles = execSync('git diff --name-status HEAD~1 HEAD', { encoding: 'utf-8' })
@@ -84,9 +96,54 @@ const updatedValuePaths = updatedVariablePaths.filter(dir => dir.endsWith('.md')
 
 for (const rulePath of updatedValuePaths) {
     const valueName = rulePath.split('/')[rulePath.split('/').length - 1].slice(0, -3);
-    const categoryId = categories.find(c => sanitize(c.name) === rulePath.split('/')[2]).id;
-    const value = values.find(val => sanitize(val.name) === valueName);
+    const variableName = rulePath.split('/')[rulePath.split('/').length - 3];
+    let availableVariables: Variable[];
+
+    const directSubpath = rulePath.split('/')[2];
+
+    if (directSubpath === 'Categories') {
+
+        const categoryName = rulePath.split('/')[3];
+
+        let category = findItemByName(categories, categoryName)
+        if (!category) category = findItemById(categories, categoryName.slice(-8));
+
+        availableVariables = variables.filter(v => v.categoryId === category.id && !v.levelId);
+
+    } else if (directSubpath === 'Levels') {
+
+        const levelName = rulePath.split('/')[3];
+
+        let level = findItemByName(levels, levelName);
+        if (!level) level = findItemById(levels, levelName.slice(-8));
+
+        availableVariables = variables.filter(v => v.levelId === level.id && !v.categoryId);
+
+    } else if (directSubpath === 'GlobalVariables') {
+
+        availableVariables = variables.filter(v => !v.categoryId && !v.levelId);
+
+    } else if (directSubpath === 'MappedVariables') {
+
+        const levelName = rulePath.split('/')[3];
+        const categoryName = rulePath.split('/')[4];
+
+        let level = findItemByName(levels, levelName);
+        if (!level) level = findItemById(levels, levelName.slice(-8));
+
+        let category = findItemByName(categories, categoryName);
+        if (!category) category = findItemById(categories, categoryName.slice(-8));
+
+        availableVariables = variables.filter(v => v.levelId === level.id && v.categoryId === category.id);
+    }
+
+    let variable = findItemByName(availableVariables, variableName);
+    if (!variable) variable = findItemById(availableVariables, variableName.slice(-8));
     
+    const availableValues = values.filter(val => val.variableId === variable.id)
+    let value = findItemByName(availableValues, valueName);
+    if (!value) value = findItemById(availableValues, valueName.slice(-8));
+
     if (!updatedVars.has(value.variableId)) {
         updatedVars.set(value.variableId, { newValues: [] });
     }
