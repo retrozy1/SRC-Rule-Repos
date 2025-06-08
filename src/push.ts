@@ -97,7 +97,7 @@ for (const rulePath of updatedVariablePaths) {
     const variableName = rulePath.split('/')[rulePath.split('/').length - (rulePath.endsWith('.txt') ? 2 : 3)];
     let availableVariables: Variable[];
 
-    const directSubpath = rulePath.split('/')[2];
+    const directSubpath = rulePath.split('/')[1];
 
     if (directSubpath === 'Categories') {
         const categoryName = rulePath.split('/')[2];
