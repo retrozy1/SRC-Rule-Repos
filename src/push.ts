@@ -100,13 +100,13 @@ for (const rulePath of updatedVariablePaths) {
     const directSubpath = rulePath.split('/')[2];
 
     if (directSubpath === 'Categories') {
-        const categoryName = rulePath.split('/')[3];
+        const categoryName = rulePath.split('/')[2];
         let category = findItemByName(categories, categoryName)
         if (!category) category = findItemById(categories, categoryName.slice(-8));
         availableVariables = variables.filter(v => v.categoryId === category.id && !v.levelId);
 
     } else if (directSubpath === 'Levels') {
-        const levelName = rulePath.split('/')[3];
+        const levelName = rulePath.split('/')[2];
         let level = findItemByName(levels, levelName);
         if (!level) level = findItemById(levels, levelName.slice(-8));
         availableVariables = variables.filter(v => v.levelId === level.id && !v.categoryId);
@@ -115,8 +115,8 @@ for (const rulePath of updatedVariablePaths) {
         availableVariables = variables.filter(v => !v.categoryId && !v.levelId);
 
     } else if (directSubpath === 'MappedVariables') {
-        const levelName = rulePath.split('/')[3];
-        const categoryName = rulePath.split('/')[4];
+        const levelName = rulePath.split('/')[2];
+        const categoryName = rulePath.split('/')[3];
         let level = findItemByName(levels, levelName);
         if (!level) level = findItemById(levels, levelName.slice(-8));
         let category = findItemByName(categories, categoryName);
