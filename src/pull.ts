@@ -3,6 +3,8 @@ import 'dotenv/config';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { promisify } from 'util';
+import { glob } from 'glob';
 
 const PHPSESSID = process.env.PHPSESSID;
 const gameId = process.env.GAME_ID;
@@ -12,9 +14,12 @@ const client = new Client({
     PHPSESSID
 });
 
+const createdFiles = new Set<string>();
+
 const writeMarkdownFile = async (filePath: string, content: string) => {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content);
+    createdFiles.add(path.resolve(filePath));
 }
 
 const directoryExists = async (path: string) => {
@@ -156,6 +161,28 @@ for (const variable of mappedVars) {
         variableName
     );
     await makeValues(mappingDir, variable);
+}
+
+//Remove deleted
+const rulesDir = path.resolve('Rules');
+const globAsync = promisify(glob);
+const allFiles = await globAsync('**/*', { cwd: rulesDir, absolute: true, dot: true, nodir: false }) as string[];
+
+for (const file of allFiles) {
+    if (!createdFiles.has(file)) {
+        // Remove file or directory
+        try {
+            const stat = await fs.stat(file);
+            if (stat.isDirectory()) {
+                await fs.rmdir(file, { recursive: true });
+            } else {
+                await fs.unlink(file);
+            }
+            console.log(`Deleted obsolete: ${file}`);
+        } catch (err) {
+            console.error(`Failed to delete ${file}:`, err);
+        }
+    }
 }
 
 //Commit
