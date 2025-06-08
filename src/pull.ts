@@ -41,7 +41,7 @@ const makeIdExtensions = <T extends { name: string, id: string }>(items: T[], it
     return itemName;
 }
 
-const session = await client.GetSession({}).then(ses => ses.session);
+const session = await client.GetSession().then(ses => ses.session);
 const gameModeration = session.gameModeratorList.find(gm => gm.gameId === gameId);
 if (gameModeration) {
     if (gameModeration.level === -1) {
