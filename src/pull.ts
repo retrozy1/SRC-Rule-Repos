@@ -1,41 +1,39 @@
-import Client, { Value, Variable } from 'speedruncom.js';
-import 'dotenv/config';
-import { promises as fs } from 'fs';
+import { EventType, Value, Variable } from 'speedruncom.js';
+import client, { getGameData } from './speedrun.js';
+import config from '../config.js';
+import { writeMarkdownFile, directoryExists, makeDirectory, remove } from './files.js';
+import { tryDiff, push } from './git.js';
+import { sanitize } from './utils.js';
 import path from 'path';
-import { execSync } from 'child_process';
-import { promisify } from 'util';
-import { glob } from 'glob';
 
-const PHPSESSID = process.env.PHPSESSID;
-const gameId = process.env.GAME_ID;
+const GAME_ID = config.id;
 
-const client = new Client({
-    userAgent: 'gameRulesRepo',
-    PHPSESSID
-});
+const updatedEvents = [
+    EventType.CategoryArchived,
+    EventType.CategoryCreated,
+    EventType.CategoryRestored,
+    EventType.CategoryUpdated,
+    EventType.GameUpdated,
+    EventType.LevelArchived,
+    EventType.LevelCreated,
+    EventType.LevelUpdated,
+    EventType.ValueCreated,
+    EventType.ValueUpdated,
+    EventType.VariableArchived,
+    EventType.VariableCreated,
+    EventType.VariableUpdated
+];
 
 const createdFiles = new Set<string>();
 
-const writeMarkdownFile = async (filePath: string, content: string) => {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content);
+const makeFile = async (filePath: string, content: string) => {
+    await writeMarkdownFile(filePath, content);
     createdFiles.add(path.resolve(filePath));
-}
+};
 
-const directoryExists = async (path: string) => {
-    try {
-        const stat = await fs.stat(path);
-        return stat.isDirectory();
-    } catch (err) {
-        if (err.code === 'ENOENT') {
-            return false;
-        }
-        throw err;
-    }
-}
-
-const sanitize = (name: string) => {
-    return name.replace(/[\/\\?%*:|"<>]/g, '-');
+const makeDir = async (directoryPath: string) => {
+    await makeDirectory(directoryPath)
+    createdFiles.add(path.resolve(directoryPath));
 }
 
 const makeIdExtensions = <T extends { name: string, id: string }>(items: T[], item: T): string => {
@@ -44,20 +42,7 @@ const makeIdExtensions = <T extends { name: string, id: string }>(items: T[], it
         itemName += `-${item.id}`;
     }
     return itemName;
-}
-
-const session = await client.GetSession().then(ses => ses.session);
-const gameModeration = session.gameModeratorList.find(gm => gm.gameId === gameId);
-if (gameModeration) {
-    if (gameModeration.level === -1) {
-        throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.');
-    }
-} else {
-    throw new Error('This account does not moderate this game.');
-}
-
-const smod = gameModeration.level === 1;
-let init = await directoryExists('../Rules');
+};
 
 const makeVariables = async (dir: string, arr: any[]) => {
     for (const v of arr) {
@@ -66,33 +51,37 @@ const makeVariables = async (dir: string, arr: any[]) => {
             v
         );
     }
-}
+};
 
 const makeValues = async (dir: string, variable: Variable) => {
-    await fs.mkdir(dir, { recursive: true });
-    await writeMarkdownFile(path.join(dir, 'Description.txt'), variable.description ?? '');
+    await makeDir(dir);
+    await makeFile(path.join(dir, 'Description.txt'), variable.description ?? '');
 
     const vals = valMap.get(variable.id) ?? [];
     for (const val of vals) {
-        await writeMarkdownFile(
+        await makeFile(
             path.join(dir, 'Values', `${sanitize(val.name)}.md`),
             val.rules ?? ''
         );
     }
 }
 
-let { game, categories, levels, variables, values } = await Client.GetGameData({
-    gameId
-});
+const session = await client.post('GetSession', {}).then(ses => ses.data.session);
+const gameModeration = session.gameModeratorList.find(gm => gm.gameId === GAME_ID);
 
-//Remove archives
-categories = categories.filter(cat => !cat.archived);
-levels = levels.filter(lvl => !lvl.archived);
-variables = variables.filter(v => !v.archived);
-values = values.filter(val => !val.archived);
+if (!gameModeration) throw new Error('This account does not moderate this game.');
+if (gameModeration.level === -1) throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.');
+
+const smod = gameModeration.level === 1;
+const init = !(await directoryExists('Rules'));
+
+const { categories, game, levels, values, variables } = await getGameData(GAME_ID);
+
+//Easiest way to deal with item renames/deletion - start on a clean directory
+if (!init) await remove('Rules');
 
 //Game rules
-await writeMarkdownFile(path.join('Rules', 'GameRules.md'), game.rules ?? '');
+await makeFile(path.join('Rules', 'Game Rules.md'), game.rules ?? '');
 
 //Organize variables and values
 const valMap: Map<string, Value[]> = new Map();
@@ -106,12 +95,12 @@ for (const val of values) {
 
 // Categories
 for (const cat of categories) {
-    let catName = sanitize(cat.name);
-    if (categories.filter(c => sanitize(c.name) === catName).length > 1) {
-        catName += `-${cat.id}`;
-    }
+    const catName = makeIdExtensions(categories, cat);
     const catDir = path.join('Rules', 'Categories', catName);
-    await writeMarkdownFile(path.join(catDir, `${catName}.md`), cat.rules);
+    await makeFile(
+        path.join(catDir, `${catName}.md`),
+        cat.rules
+    );
 
     await makeVariables(
         path.join(catDir, 'Variables'),
@@ -121,12 +110,9 @@ for (const cat of categories) {
 
 // Levels
 for (const lvl of levels) {
-    let lvlName = sanitize(lvl.name);
-    if (levels.filter(l => sanitize(l.name) === lvlName).length > 1) {
-        lvlName += `-${lvl.id}`;
-    }
+    const lvlName = makeIdExtensions(levels, lvl);
     const lvlDir = path.join('Rules', 'Levels', lvlName);
-    await writeMarkdownFile(
+    await makeFile(
         path.join(lvlDir, `${lvlName}.md`),
         lvl.rules ?? ''
     );
@@ -139,7 +125,7 @@ for (const lvl of levels) {
 
 // Global Variables
 await makeVariables(
-    path.join('Rules', 'GlobalVariables'),
+    path.join('Rules', 'Global Variables'),
     variables.filter(v => !v.categoryId && !v.levelId)
 );
 
@@ -155,7 +141,7 @@ for (const variable of mappedVars) {
 
     const mappingDir = path.join(
         'Rules',
-        'MappedVariables',
+        'Mapped Variables',
         levelName,
         categoryName,
         variableName
@@ -163,73 +149,33 @@ for (const variable of mappedVars) {
     await makeValues(mappingDir, variable);
 }
 
-//Remove deleted
-const rulesDir = path.resolve('Rules');
-const globAsync = promisify(glob);
-const allFiles = await globAsync('**/*', { cwd: rulesDir, absolute: true, dot: true, nodir: false }) as string[];
-
-for (const file of allFiles) {
-    if (!createdFiles.has(file)) {
-        // Remove file or directory
-        try {
-            const stat = await fs.stat(file);
-            if (stat.isDirectory()) {
-                await fs.rmdir(file, { recursive: true });
-            } else {
-                await fs.unlink(file);
-            }
-            console.log(`Deleted obsolete: ${file}`);
-        } catch (err) {
-            console.error(`Failed to delete ${file}:`, err);
-        }
-    }
-}
-
 //Commit
 try {
-    execSync('git diff --quiet');
+    tryDiff();
     console.log('No changes found');
 } catch {
     console.log('Changes found, pushing changes...');
-    let message: string;
-    execSync('git config user.name "github-actions[bot]"');
-    execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
-    execSync('git add -A');
 
+    let message: string;
     if (init) {
         message = 'Initial rule creation';
     } else {
         message = 'Rules updated from speedrun.com';
         if (smod) {
-            const auditLog = await client.GetAuditLogList({
-                gameId,
+            const { data: auditLog } = await client.post('GetAuditLogList', {
+                gameId: GAME_ID,
                 page: 1
             });
-
-            const updatedEvents = [
-                'category-created',
-                'category-archived',
-                'category-restored',
-                'category-updated',
-                'game-updated',
-                'level-created',
-                'level-archived',
-                'level-updated',
-                'value-created',
-                'value-updated',
-                'variable-archived',
-                'variable-created',
-                'variable-updated'
-            ];
 
             const latestChange = auditLog.auditLogList.find(entry =>
                 updatedEvents.includes(entry.eventType)
             );
 
-            message += ` by ${auditLog.userList.find(user => user.id === latestChange.actorId).name}`;
+            if (latestChange) message += ` by ${auditLog.userList.find(user => user.id === latestChange.actorId).name}`;
         }
     }
-    execSync(`git commit -m "${message}"`);
-    execSync('git push');
+
+    //push(message);
+
     console.log('Changes pushed');
 }

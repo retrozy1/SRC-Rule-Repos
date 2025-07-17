@@ -1,21 +1,15 @@
-import Client, { Value, Variable, Category } from 'speedruncom.js';
-import 'dotenv/config';
-import { promises as fs } from 'fs';
+import { Value, Variable } from 'speedruncom.js';
+import client, { getGameData } from './speedrun.js';
+import { getChangedFiles } from './git.js';
+import { readMarkdown } from './files.js';
+import { sanitize } from './utils.js';
 import path from 'path';
-import { execSync } from 'child_process';
+import config from '../config.js';
 
-const gameId = process.env.GAME_ID;
-
-const sanitize = (name: string) => {
-    return name.replace(/[\/\\?%*:|"<>]/g, '-');
-}
+const GAME_ID = config.id
 
 const filterByPath = (subpath: string) => {
     return changedFiles.filter(dir => dir.split('/')[1] === subpath && dir.split('/').length - 1 === 3);
-}
-
-const readMarkdown = async (dir: string) => {
-    return await fs.readFile(dir, 'utf-8');
 }
 
 const findItemByName = <T extends { name: string }>(items: T[], name: string): T | undefined => {
@@ -26,38 +20,21 @@ const findItemById = <T extends { id: string }>(items: T[], id: string): T | und
     return items.find(item => sanitize(item.id) === id);
 }
 
-const client = new Client({
-    userAgent: 'gameRulesRepo',
-    PHPSESSID: process.env.PHPSESSID
-});
-
-let { categories, levels, variables, values } = await Client.GetGameData({
-    gameId
-});
-
-//Remove archives
-categories = categories.filter(cat => !cat.archived);
-levels = levels.filter(lvl => !lvl.archived);
-variables = variables.filter(v => !v.archived);
-values = values.filter(val => !val.archived);
-
 //Gets an array of strings of modified file dirs from last commit
-const changedFiles = execSync('git diff --name-status HEAD~1 HEAD', { encoding: 'utf-8' })
-    .trim()
-    .split('\n')
-    .filter(line => line.startsWith('M\t'))
-    .map(line => line.split('\t')[1]);
+const changedFiles = getChangedFiles();
+
+const { categories, levels, variables, values } = await getGameData(GAME_ID)
 
 //Game rules
 if (changedFiles.includes('Rules/GameRules.md')) {
-    const gameSettings = await client.GetGameSettings({
-        gameId
+    const { data: gameSettings } = await client.post('GetGameSettings', {
+        gameId: GAME_ID
     });
 
     gameSettings.settings.rules = await readMarkdown(path.join('Rules', 'GameRules.md'));
 
-    await client.PutGameSettings({
-        gameId,
+    client.post('PutGameSettings', {
+        gameId: GAME_ID,
         settings: gameSettings.settings
     });
 }
@@ -68,8 +45,8 @@ for (const rulePath of filterByPath('Categories')) {
 
     category.rules = await readMarkdown(rulePath);
 
-    await client.PutCategoryUpdate({
-        gameId,
+    client.post('PutCategoryUpdate', {
+        gameId: GAME_ID,
         categoryId: category.id,
         category
     });
@@ -81,8 +58,8 @@ for (const rulePath of filterByPath('Levels')) {
 
     level.rules = await readMarkdown(rulePath);
 
-    await client.PutLevelUpdate({
-        gameId,
+    client.post('PutLevelUpdate', {
+        gameId: GAME_ID,
         levelId: level.id,
         level
     });
@@ -155,8 +132,8 @@ updatedVars.forEach(async (value, key) => {
         variableValues.push(v);
     }
 
-    client.PutVariableUpdate({
-        gameId,
+    client.post('PutVariableUpdate', {
+        gameId: GAME_ID,
         variableId: key,
         variable,
         values: variableValues

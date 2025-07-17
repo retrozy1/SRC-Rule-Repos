@@ -13,12 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
         PHPSESSID: ${{ secrets.PHPSESSID }}
-        GAME_ID: ${{ secrets.GAME_ID }}
     steps:
       - name: Validate required secrets
         run: |
-          if [ -z "${{ secrets.PHPSESSID }}" ] || [ -z "${{ secrets.GAME_ID }}" ]; then
-            echo "Required secrets PHPSESSID or gameId are not set. Exiting."
+          if [ -z "${{ secrets.PHPSESSID }}" ]; then
+            echo "Required secrets PHPSESSID is not set. Exiting."
             exit 1
           fi
           echo "Secrets are set. Proceeding with the job."
