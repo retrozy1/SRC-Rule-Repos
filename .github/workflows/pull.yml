@@ -27,4 +27,4 @@ jobs:
         with:
           node-version: '18'
       - run: npm install
-      - run: npx tsx src/pull.ts
+      - run: tsx src/pull.ts
