@@ -9,8 +9,12 @@ export const push = (message: string) => {
 }
 
 export const checkChanges = () => {
-    const changes = execSync('git diff --name-only HEAD').toString().trim();
+    const changes = execSync('git status --porcelain').toString().trim();
     if (changes.length) return true;
+}
+
+export const tryChanges = () => {
+    execSync('git diff --quiet');
 }
 
 export const getChangedFiles = () => {
