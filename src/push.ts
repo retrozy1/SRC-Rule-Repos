@@ -4,7 +4,6 @@ import { getChangedFiles } from './git.js';
 import { readMarkdown } from './files.js';
 import { sanitize } from './utils.js';
 import { GameTypeFolderNames } from './types.js';
-import path from 'path';
 import config from '../config.js';
 
 const filterByPath = (changedFiles: string[], subpath: string) => {
@@ -48,7 +47,7 @@ for (const gameName of updatedGames) {
 
     //Categories
     for (const rulePath of filterByPath(changedFiles, 'Categories')) {
-        const category = categories.find(cat => sanitize(cat.name) === rulePath.split('/')[2]);
+        const category = categories.find(cat => sanitize(cat.name) === rulePath.split('/')[1]);
 
         category.rules = await readMarkdown(rulePath);
 
@@ -61,7 +60,7 @@ for (const gameName of updatedGames) {
 
     //Levels
     for (const rulePath of filterByPath(changedFiles, 'Levels')) {
-        const level = levels.find(lvl => sanitize(lvl.name) === rulePath.split('/')[2]);
+        const level = levels.find(lvl => sanitize(lvl.name) === rulePath.split('/')[1]);
 
         level.rules = await readMarkdown(rulePath);
 
@@ -78,19 +77,19 @@ for (const gameName of updatedGames) {
     const updatedVariablePaths = changedFiles.filter(file => file.endsWith('.txt') || file.split('/').length > 4);
 
     for (const rulePath of updatedVariablePaths) {
-        const variableName = rulePath.split('/')[rulePath.split('/').length - (rulePath.endsWith('.txt') ? 2 : 3)];
+        const variableName = rulePath.split('/')[rulePath.split('/').length - (rulePath.endsWith('.txt') ? 1 : 2)];
         let availableVariables: Variable[];
 
-        const directSubpath = rulePath.split('/')[1];
+        const directSubpath = rulePath.split('/')[0];
 
         if (directSubpath === 'Categories') {
-            const categoryName = rulePath.split('/')[2];
-            let category = findItemByName(categories, categoryName)
+            const categoryName = rulePath.split('/')[1];
+            let category = findItemByName(categories, categoryName);
             if (!category) category = findItemById(categories, categoryName.slice(-8));
             availableVariables = variables.filter(v => v.categoryId === category.id && !v.levelId);
 
         } else if (directSubpath === 'Levels') {
-            const levelName = rulePath.split('/')[2];
+            const levelName = rulePath.split('/')[1];
             let level = findItemByName(levels, levelName);
             if (!level) level = findItemById(levels, levelName.slice(-8));
             availableVariables = variables.filter(v => v.levelId === level.id && !v.categoryId);
@@ -99,8 +98,8 @@ for (const gameName of updatedGames) {
             availableVariables = variables.filter(v => !v.categoryId && !v.levelId);
 
         } else if (directSubpath === 'Mapped Variables') {
-            const levelName = rulePath.split('/')[2];
-            const categoryName = rulePath.split('/')[3];
+            const levelName = rulePath.split('/')[1];
+            const categoryName = rulePath.split('/')[2];
             let level = findItemByName(levels, levelName);
             if (!level) level = findItemById(levels, levelName.slice(-8));
             let category = findItemByName(categories, categoryName);
@@ -114,13 +113,13 @@ for (const gameName of updatedGames) {
         if (!updatedVars.has(variable.id)) {
             updatedVars.set(variable.id, { newValues: [] });
         }
-        const varElement = updatedVars.get(variable.id)
+        const varElement = updatedVars.get(variable.id);
 
         if (rulePath.endsWith('.txt')) {
             varElement.newDescription = await readMarkdown(rulePath);
         } else {
             const valueName = rulePath.split('/')[rulePath.split('/').length - 1].slice(0, -3);
-            const availableValues = values.filter(val => val.variableId === variable.id)
+            const availableValues = values.filter(val => val.variableId === variable.id);
             let value = findItemByName(availableValues, valueName);
             if (!value) value = findItemById(availableValues, valueName.slice(-8));
             
