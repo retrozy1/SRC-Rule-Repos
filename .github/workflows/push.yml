@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'Rules/**'
+    branches:
+      - 'main'
 
 jobs:
   run-script:

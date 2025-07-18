@@ -66,7 +66,7 @@ const makeGameRuleFiles = async (game_id: string, dirName: string) => {
     if (gameModeration.level === -1) throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.');
 
     const smod = gameModeration.level === 1;
-    init = !(await directoryExists(dirName));
+    init ??= !(await directoryExists(dirName));
 
     const { categories, game, levels, values, variables } = await getGameData(game_id);
 
