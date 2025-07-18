@@ -5,9 +5,10 @@ import { readMarkdown } from './files.js';
 import { sanitize } from './utils.js';
 import { GameTypeFolderNames } from './types.js';
 import config from '../config.js';
+import path from 'path';
 
 const filterByPath = (changedFiles: string[], subpath: string) => {
-    return changedFiles.filter(dir => dir.split('/')[1] === subpath && dir.split('/').length - 1 === 3);
+    return changedFiles.filter(dir => dir.split('/')[0] === subpath && dir.split('/').length === 3);
 };
 
 const findItemByName = <T extends { name: string }>(items: T[], name: string): T | undefined => {
@@ -37,7 +38,7 @@ for (const gameName of updatedGames) {
             gameId
         });
 
-        gameSettings.settings.rules = await readMarkdown('Game Rules.md');
+        gameSettings.settings.rules = await readMarkdown(path.join(gameName, 'Game Rules.md'));
 
         client.post('PutGameSettings', {
             gameId,
@@ -49,7 +50,7 @@ for (const gameName of updatedGames) {
     for (const rulePath of filterByPath(changedFiles, 'Categories')) {
         const category = categories.find(cat => sanitize(cat.name) === rulePath.split('/')[1]);
 
-        category.rules = await readMarkdown(rulePath);
+        category.rules = await readMarkdown(path.join(gameName, rulePath));
 
         client.post('PutCategoryUpdate', {
             gameId,
@@ -62,7 +63,7 @@ for (const gameName of updatedGames) {
     for (const rulePath of filterByPath(changedFiles, 'Levels')) {
         const level = levels.find(lvl => sanitize(lvl.name) === rulePath.split('/')[1]);
 
-        level.rules = await readMarkdown(rulePath);
+        level.rules = await readMarkdown(path.join(gameName, rulePath));
 
         client.post('PutLevelUpdate', {
             gameId,
@@ -116,14 +117,14 @@ for (const gameName of updatedGames) {
         const varElement = updatedVars.get(variable.id);
 
         if (rulePath.endsWith('.txt')) {
-            varElement.newDescription = await readMarkdown(rulePath);
+            varElement.newDescription = await readMarkdown(path.join(gameName, rulePath));
         } else {
             const valueName = rulePath.split('/')[rulePath.split('/').length - 1].slice(0, -3);
             const availableValues = values.filter(val => val.variableId === variable.id);
             let value = findItemByName(availableValues, valueName);
             if (!value) value = findItemById(availableValues, valueName.slice(-8));
             
-            varElement.newValues.push({ valueId: value.id, newRules: await readMarkdown(rulePath) });
+            varElement.newValues.push({ valueId: value.id, newRules: await readMarkdown(path.join(gameName, rulePath)) });
         }
     }
 
