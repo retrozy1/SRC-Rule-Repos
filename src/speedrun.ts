@@ -1,13 +1,11 @@
 import 'dotenv/config';
 import Client from 'speedruncom.js';
 
-export const GAME_ID = process.env.GAME_ID;
-
 const client = new Client();
 client.axiosClient.defaults.headers.common['Cookie'] = `PHPSESSID=${process.env.PHPSESSID}`;
 
 export const getGameData = async (game_id: string) => {
-    let { data } = await client.get('GetGameData', { gameId: GAME_ID });
+    let { data } = await client.get('GetGameData', { gameId: game_id });
 
     data.categories = data.categories.filter(cat => !cat.archived);
     data.levels = data.levels.filter(lvl => !lvl.archived);

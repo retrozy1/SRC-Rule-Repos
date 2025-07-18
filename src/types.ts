@@ -1,3 +1,4 @@
+import { Value } from 'speedruncom.js';
 
 type AtLeastTwo<T, Keys extends keyof T = keyof T> =
     Pick<T, Exclude<keyof T, Keys>> &
@@ -20,6 +21,20 @@ interface GameTypes {
     categoryExtensionsId: string;
 }
 
-export type Config = {
-    id: string// | AtLeastTwo<GameTypes>;
+export enum GameTypeFolderNames {
+    romHackGameId = "Rom Hack",
+    moddedGameId = "Modded",
+    fanGameId = "Fan Game",
+    preReleaseId = "Pre Release",
+    dlcId = "DLC",
+    mainGameId = "Main Game",
+    miniGameId = "Mini Game",
+    customServerId = "Custom Server",
+    categoryExtensionsId = "Category Extensions"
 }
+
+export type Config = {
+    id: string | AtLeastTwo<GameTypes>;
+}
+
+export type ValueMap = Map<string, Value[]>

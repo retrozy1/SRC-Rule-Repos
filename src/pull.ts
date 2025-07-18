@@ -1,12 +1,11 @@
-import { EventType, Value, Variable } from 'speedruncom.js';
+import { EventType, Variable } from 'speedruncom.js';
 import client, { getGameData } from './speedrun.js';
 import config from '../config.js';
 import { writeMarkdownFile, directoryExists, makeDirectory, remove } from './files.js';
-import { tryDiff, push } from './git.js';
+import { checkChanges, push } from './git.js';
 import { sanitize } from './utils.js';
+import { ValueMap, GameTypeFolderNames } from './types.js';
 import path from 'path';
-
-const GAME_ID = config.id;
 
 const updatedEvents = [
     EventType.CategoryArchived,
@@ -24,18 +23,6 @@ const updatedEvents = [
     EventType.VariableUpdated
 ];
 
-const createdFiles = new Set<string>();
-
-const makeFile = async (filePath: string, content: string) => {
-    await writeMarkdownFile(filePath, content);
-    createdFiles.add(path.resolve(filePath));
-};
-
-const makeDir = async (directoryPath: string) => {
-    await makeDirectory(directoryPath)
-    createdFiles.add(path.resolve(directoryPath));
-}
-
 const makeIdExtensions = <T extends { name: string, id: string }>(items: T[], item: T): string => {
     let itemName = sanitize(item.name);
     if (items.filter(i => sanitize(i.name) === itemName).length > 1) {
@@ -44,22 +31,23 @@ const makeIdExtensions = <T extends { name: string, id: string }>(items: T[], it
     return itemName;
 };
 
-const makeVariables = async (dir: string, arr: any[]) => {
+const makeVariables = async (valueMap: ValueMap, dir: string, arr: any[]) => {
     for (const v of arr) {
         await makeValues(
+            valueMap,
             path.join(dir, sanitize(v.name)),
             v
         );
     }
 };
 
-const makeValues = async (dir: string, variable: Variable) => {
-    await makeDir(dir);
-    await makeFile(path.join(dir, 'Description.txt'), variable.description ?? '');
+const makeValues = async (map: ValueMap, dir: string, variable: Variable) => {
+    await makeDirectory(dir);
+    await writeMarkdownFile(path.join(dir, 'Description.txt'), variable.description ?? '');
 
-    const vals = valMap.get(variable.id) ?? [];
+    const vals = map.get(variable.id) ?? [];
     for (const val of vals) {
-        await makeFile(
+        await writeMarkdownFile(
             path.join(dir, 'Values', `${sanitize(val.name)}.md`),
             val.rules ?? ''
         );
@@ -67,93 +55,121 @@ const makeValues = async (dir: string, variable: Variable) => {
 }
 
 const session = await client.post('GetSession', {}).then(ses => ses.data.session);
-const gameModeration = session.gameModeratorList.find(gm => gm.gameId === GAME_ID);
+let init: boolean;
+let wasChanged: boolean;
+const siteRuleChangers: Set<string> = new Set();
 
-if (!gameModeration) throw new Error('This account does not moderate this game.');
-if (gameModeration.level === -1) throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.');
+const makeGameRuleFiles = async (game_id: string, dirName: string) => {
+    const gameModeration = session.gameModeratorList.find(gm => gm.gameId === game_id);
 
-const smod = gameModeration.level === 1;
-const init = !(await directoryExists('Rules'));
+    if (!gameModeration) throw new Error('This account does not moderate this game.');
+    if (gameModeration.level === -1) throw new Error('This account is a verifier. The account must be a Moderator or Super Moderator of the game.');
 
-const { categories, game, levels, values, variables } = await getGameData(GAME_ID);
+    const smod = gameModeration.level === 1;
+    init = !(await directoryExists(dirName));
 
-//Easiest way to deal with item renames/deletion - start on a clean directory
-if (!init) await remove('Rules');
+    const { categories, game, levels, values, variables } = await getGameData(game_id);
 
-//Game rules
-await makeFile(path.join('Rules', 'Game Rules.md'), game.rules ?? '');
+    //Easiest way to deal with item renames/deletion - start on a clean directory
+    if (!init) await remove(dirName);
 
-//Organize variables and values
-const valMap: Map<string, Value[]> = new Map();
+    //Game rules
+    await writeMarkdownFile(path.join(dirName, 'Game Rules.md'), game.rules ?? '');
 
-for (const val of values) {
-    if (!valMap.has(val.variableId)) {
-        valMap.set(val.variableId, []);
+    //Organize variables and values
+    const valMap: ValueMap = new Map();
+
+    for (const val of values) {
+        if (!valMap.has(val.variableId)) {
+            valMap.set(val.variableId, []);
+        }
+        valMap.get(val.variableId).push(val);
     }
-    valMap.get(val.variableId).push(val);
-}
 
-// Categories
-for (const cat of categories) {
-    const catName = makeIdExtensions(categories, cat);
-    const catDir = path.join('Rules', 'Categories', catName);
-    await makeFile(
-        path.join(catDir, `${catName}.md`),
-        cat.rules
-    );
+    // Categories
+    for (const cat of categories) {
+        const catName = makeIdExtensions(categories, cat);
+        const catDir = path.join(dirName, 'Categories', catName);
+        await writeMarkdownFile(
+            path.join(catDir, `${catName}.md`),
+            cat.rules
+        );
 
+        await makeVariables(
+            valMap,
+            path.join(catDir, 'Variables'),
+            variables.filter(v => v.categoryId === cat.id && !v.levelId)
+        );
+    }
+
+    // Levels
+    for (const lvl of levels) {
+        const lvlName = makeIdExtensions(levels, lvl);
+        const lvlDir = path.join(dirName, 'Levels', lvlName);
+        await writeMarkdownFile(
+            path.join(lvlDir, `${lvlName}.md`),
+            lvl.rules ?? ''
+        );
+
+        await makeVariables(
+            valMap,
+            path.join(lvlDir, 'Variables'),
+            variables.filter(v => v.levelId === lvl.id && !v.categoryId)
+        );
+    }
+
+    // Global Variables
     await makeVariables(
-        path.join(catDir, 'Variables'),
-        variables.filter(v => v.categoryId === cat.id && !v.levelId)
+        valMap,
+        path.join(dirName, 'Global Variables'),
+        variables.filter(v => !v.categoryId && !v.levelId)
     );
+
+    // Mapped Variables
+    const mappedVars = variables.filter(v => v.categoryId && v.levelId);
+    for (const variable of mappedVars) {
+        const category = categories.find(c => c.id === variable.categoryId);
+        const level = levels.find(l => l.id === variable.levelId);
+
+        const levelName = makeIdExtensions(levels, level);
+        const categoryName = makeIdExtensions(categories, category);
+        const variableName = makeIdExtensions(mappedVars, variable);
+
+        const mappingDir = path.join(
+            dirName,
+            'Mapped Variables',
+            levelName,
+            categoryName,
+            variableName
+        );
+        await makeValues(valMap, mappingDir, variable);
+    }
+
+    wasChanged ??= checkChanges();
+    if (wasChanged && smod) {
+        const { data: auditLog } = await client.post('GetAuditLogList', {
+            gameId: game_id,
+            page: 1
+        });
+
+        const latestChange = auditLog.auditLogList.find(entry =>
+            updatedEvents.includes(entry.eventType)
+        );
+
+        siteRuleChangers.add(auditLog.userList.find(user => user.id === latestChange.actorId).name)
+    }
 }
 
-// Levels
-for (const lvl of levels) {
-    const lvlName = makeIdExtensions(levels, lvl);
-    const lvlDir = path.join('Rules', 'Levels', lvlName);
-    await makeFile(
-        path.join(lvlDir, `${lvlName}.md`),
-        lvl.rules ?? ''
-    );
-
-    await makeVariables(
-        path.join(lvlDir, 'Variables'),
-        variables.filter(v => v.levelId === lvl.id && !v.categoryId)
-    );
+if (typeof config.id === 'string') {
+    await makeGameRuleFiles(config.id, 'Rules');
+} else {
+    for (const [key, value] of Object.entries(config.id)) {
+        await makeGameRuleFiles(value, GameTypeFolderNames[key]);
+    }
 }
 
-// Global Variables
-await makeVariables(
-    path.join('Rules', 'Global Variables'),
-    variables.filter(v => !v.categoryId && !v.levelId)
-);
-
-// Mapped Variables
-const mappedVars = variables.filter(v => v.categoryId && v.levelId);
-for (const variable of mappedVars) {
-    const category = categories.find(c => c.id === variable.categoryId);
-    const level = levels.find(l => l.id === variable.levelId);
-
-    const levelName = makeIdExtensions(levels, level);
-    const categoryName = makeIdExtensions(categories, category);
-    const variableName = makeIdExtensions(mappedVars, variable);
-
-    const mappingDir = path.join(
-        'Rules',
-        'Mapped Variables',
-        levelName,
-        categoryName,
-        variableName
-    );
-    await makeValues(mappingDir, variable);
-}
-
-//Commit
-try {
-    tryDiff();
-    console.log('No changes found');
-} catch {
+//Commit and push
+if (wasChanged) {
     console.log('Changes found, pushing changes...');
 
     let message: string;
@@ -161,21 +177,12 @@ try {
         message = 'Initial rule creation';
     } else {
         message = 'Rules updated from speedrun.com';
-        if (smod) {
-            const { data: auditLog } = await client.post('GetAuditLogList', {
-                gameId: GAME_ID,
-                page: 1
-            });
-
-            const latestChange = auditLog.auditLogList.find(entry =>
-                updatedEvents.includes(entry.eventType)
-            );
-
-            if (latestChange) message += ` by ${auditLog.userList.find(user => user.id === latestChange.actorId).name}`;
-        }
+        if (siteRuleChangers.size) message += ` by ${[...siteRuleChangers].join(', ')}`;
     }
 
-    //push(message);
+    push(message);
 
     console.log('Changes pushed');
+} else {
+    console.log('No changes found');
 }
