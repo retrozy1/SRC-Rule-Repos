@@ -88,6 +88,8 @@ for (const gameName of updatedGames) {
             let category = findItemByName(categories, categoryName);
             if (!category) category = findItemById(categories, categoryName.slice(-8));
             availableVariables = variables.filter(v => v.categoryId === category.id && !v.levelId);
+            console.log(availableVariables);
+            console.log(variableName);
 
         } else if (directSubpath === 'Levels') {
             const levelName = rulePath.split('/')[1];
