@@ -4,6 +4,14 @@ on:
   push:
     paths:
       - 'Rules/**'
+      - 'Modded/**'
+      - 'Fan Game/**'
+      - 'Pre Release/**'
+      - 'DLC/**'
+      - 'Main Game/**'
+      - 'Mini Game/**'
+      - 'Custom Server/**'
+      - 'Category Extensions/**'
     branches:
       - 'main'
 
