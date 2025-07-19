@@ -78,7 +78,7 @@ for (const gameName of updatedGames) {
     const updatedVariablePaths = changedFiles.filter(file => file.endsWith('.txt') || file.split('/').length > 4);
 
     for (const rulePath of updatedVariablePaths) {
-        const variableName = rulePath.split('/')[rulePath.split('/').length - (rulePath.endsWith('.txt') ? 1 : 2)];
+        const variableName = rulePath.split('/')[rulePath.split('/').length - (rulePath.endsWith('.txt') ? 2 : 3)];
         let availableVariables: Variable[];
 
         const directSubpath = rulePath.split('/')[0];
@@ -88,8 +88,6 @@ for (const gameName of updatedGames) {
             let category = findItemByName(categories, categoryName);
             if (!category) category = findItemById(categories, categoryName.slice(-8));
             availableVariables = variables.filter(v => v.categoryId === category.id && !v.levelId);
-            console.log(availableVariables);
-            console.log(variableName);
 
         } else if (directSubpath === 'Levels') {
             const levelName = rulePath.split('/')[1];
