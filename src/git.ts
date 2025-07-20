@@ -24,7 +24,7 @@ export const getChangedFiles = () => {
         .split('\n')
         .filter(line => line.startsWith('M\t'))
         .map(line => line.split('\t')[1])
-        .filter(path => {
+        .filter(path =>
             [...Object.values(GameTypeFolderNames), 'Rules'].some(folderName => path.startsWith(folderName))
-        });
+        );
 }
