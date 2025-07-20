@@ -131,9 +131,11 @@ const makeGameRuleFiles = async (game_id: string, dirName: string) => {
         const category = categories.find(c => c.id === variable.categoryId);
         const level = levels.find(l => l.id === variable.levelId);
 
+        const variablesInMap = mappedVars.filter(v => v.categoryId === category.id && v.levelId === level.id);
+
         const levelName = makeIdExtensions(levels, level);
         const categoryName = makeIdExtensions(categories, category);
-        const variableName = makeIdExtensions(mappedVars, variable);
+        const variableName = makeIdExtensions(variablesInMap, variable);
 
         const mappingDir = path.join(
             dirName,
