@@ -132,11 +132,12 @@ for (const gameName of updatedGames) {
         const variable = variables.find(v => v.id === key);
         if (value.newDescription) variable.description = value.newDescription;
 
-        const variableValues: Value[] = [];
+        const variableValues = values
+            .filter(v => v.variableId === key)
+            .sort((a, b) => a.pos - b.pos);
         for (const val of value.newValues) {
-            const v = values.find(v => v.id === val.valueId);
+            const v = variableValues.find(v => v.id === val.valueId);
             v.rules = val.newRules;
-            variableValues.push(v);
         }
 
         client.post('PutVariableUpdate', {

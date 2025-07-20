@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { GameTypeFolderNames } from './types.js';
 
 export const push = (message: string) => {
     execSync('git config user.name "github-actions[bot]"');
@@ -22,5 +23,8 @@ export const getChangedFiles = () => {
         .trim()
         .split('\n')
         .filter(line => line.startsWith('M\t'))
-        .map(line => line.split('\t')[1]);
+        .map(line => line.split('\t')[1])
+        .filter(path => {
+            [...Object.values(GameTypeFolderNames), 'Rules'].some(folderName => path.startsWith(folderName))
+        });
 }
